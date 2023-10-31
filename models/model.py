@@ -1,4 +1,4 @@
-# parallelization in data loading does not seem to speed 
+# parallelization in data loading does not seem to speed
 from time import time
 import os
 import subprocess
@@ -103,9 +103,9 @@ class Model(nn.Module):
         self.sigs_rho = nn.parameter.Parameter(sigs_rho)
         self.min_sig = min_sig
 
-        # conv            
+        # conv
         if conv_type == "sep":
-            b = torch.zeros(1, num_filters * self.num_in, dtype=torch.float32)            
+            b = torch.zeros(1, num_filters * self.num_in, dtype=torch.float32)
             Ws = [torch.empty(num_filters, self.ngrid, dtype=torch.float32) for _ in range(self.num_in)]
             for W in Ws:
                 nn.init.xavier_normal_(W)
@@ -117,16 +117,16 @@ class Model(nn.Module):
                 W_center = torch.cat([W_center.unsqueeze(-1) for W_center in Ws_center], dim=-1).reshape(1, 1, num_filters, 1, self.num_in)
                 self.W_center = nn.parameter.Parameter(W_center)
         else:
-            b = torch.zeros(1, num_filters, dtype=torch.float32)            
+            b = torch.zeros(1, num_filters, dtype=torch.float32)
             W = torch.empty(num_filters, self.ngrid * self.num_in, dtype=torch.float32)
             nn.init.xavier_normal_(W)
-            W = W.reshape(1, 1, num_filters, self.ngrid, self.num_in)            
+            W = W.reshape(1, 1, num_filters, self.ngrid, self.num_in)
             if add_center_pixel:
                 W_center = torch.empty(num_filters, self.num_in, dtype=torch.float32)
                 nn.init.xavier_normal_(W_center)
-                W_center = W_center.reshape(1, 1, num_filters, 1, self.num_in)            
+                W_center = W_center.reshape(1, 1, num_filters, 1, self.num_in)
                 self.W_center = nn.parameter.Parameter(W_center)
-        self.W = nn.parameter.Parameter(W)            
+        self.W = nn.parameter.Parameter(W)
         self.b = nn.parameter.Parameter(b)
 
         # final MLP
@@ -159,7 +159,7 @@ class Model(nn.Module):
         rho = rho.view(B, 1, 1, 1, npoints) # .contiguous()
         theta = theta.view(B, 1, 1, 1, npoints) # .contiguous()
         mask = mask.view(B, 1, 1, 1, npoints) # .contiguous()
-        x = x.view(B, 1, 1, 1, npoints, self.num_in) # .contiguous()        
+        x = x.view(B, 1, 1, 1, npoints, self.num_in) # .contiguous()
 
         if self.add_center_pixel:
             # calculate weight [B, 1, 1, 1, Np]
@@ -191,7 +191,7 @@ class Model(nn.Module):
             h += h_center
 
         if self.conv_type == "sep":
-            o = h.view(B, self.nrotation, self.num_filters * self.num_in) # .contiguous() # [B, NF * num_in] 
+            o = h.view(B, self.nrotation, self.num_filters * self.num_in) # .contiguous() # [B, NF * num_in]
         else:
             o = h.sum(dim=-1) # [B, Nrot, NF]
 
@@ -224,7 +224,7 @@ class Model(nn.Module):
         neg_mean, neg_std = torch.mean(d_neg_loss), torch.std(d_neg_loss)
         loss = pos_mean + pos_std + neg_mean + neg_std
 
-        return d_neg, d_pos, loss        
+        return d_neg, d_pos, loss
 
     def get_dist_light(self, o, pos_mask, neg_mask, bs=128):
         B = len(o)
@@ -291,12 +291,12 @@ class Mol:
         try:
             x = np.load(fname)
             self.fname = fname
-            self.list_indices = x["list_indices"]    
+            self.list_indices = x["list_indices"]
             self.rho = x["rho"]
             self.theta = x["theta"]
             self.mask = x["mask"]
             self.x = x["x_initial"]
-            self.npoints = len(x)            
+            self.npoints = len(x)
             self.status = "good"
         except:
             self.status = "bad"
@@ -395,7 +395,7 @@ if __name__ == "__main__":
 
     # preload test-val data, unrestricted to epitope
     val_data = gen_test_val(pdbs_val)
-    test_data = gen_test_val(pdbs_test)    
+    test_data = gen_test_val(pdbs_test)
 
     savedir = "final"
     os.makedirs(savedir, exist_ok=True)
@@ -439,7 +439,7 @@ if __name__ == "__main__":
         model = Model(**params)
         device = 'cpu'
         if torch.cuda.is_available():
-            device = torch.cuda.current_device()        
+            device = torch.cuda.current_device()
             model = model.to(device)
             model.dthetas = model.dthetas.to(device)
         if prefix in expts_train:
@@ -468,7 +468,7 @@ if __name__ == "__main__":
                         get_batch(device, train_params["nsample_per_mol"], train_params["data"],
                                   train_params["num_mol"], mols, train_params["rmax"], params["rho_max"])
                     npos += pos_.sum().item()
-                    nneg += neg_.sum().item()                    
+                    nneg += neg_.sum().item()
                     o, loss, _, _ = model(x_, rho_, theta_, mask_, pos_, neg_, calc_loss=True)
                     loss.backward()
                     torch.nn.utils.clip_grad_norm_(model.parameters(), train_params["grad_norm_clip"])
@@ -479,7 +479,7 @@ if __name__ == "__main__":
                 print(f"{ckpt} train: {train_loss_tmp:.3f}")
                 print(f"{ckpt} avg pos: {npos / train_params['nbatch_ckpt'] / train_params['num_mol']}")
                 print(f"{ckpt} avg neg: {nneg / train_params['nbatch_ckpt'] / train_params['num_mol']}")
-                print(f"{ckpt} train dt: {time()-st:.3f}")                
+                print(f"{ckpt} train dt: {time()-st:.3f}")
 
                 # validation
                 st = time()
@@ -495,7 +495,7 @@ if __name__ == "__main__":
                         print("update best")
                     else:
                         nckpt_bad += 1
-                    torch.save(model.state_dict(), path)                    
+                    torch.save(model.state_dict(), path)
                 else:
                     nckpt_bad += 1
 
@@ -519,8 +519,8 @@ if __name__ == "__main__":
                 ax.set_ylim([0, 10.0])
                 ax.legend(loc="upper right")
                 plt.savefig(os.path.join(savedir, f"loss_{prefix}.png"), dpi=200, bbox_inches="tight")
-                plt.close()             
-        dt = time() - start              
+                plt.close()
+        dt = time() - start
         print(f"{dt:.3f}")
 
         # test --- test dataset

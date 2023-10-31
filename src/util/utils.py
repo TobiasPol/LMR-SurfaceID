@@ -1,10 +1,12 @@
 import seaborn as sns
 from time import time
 import os
+
 # import subprocess
 import numpy as np
 import pandas as pd
 from functools import partial
+
 # import tempfile
 from multiprocessing import Pool, cpu_count
 from Bio.PDB import PDBParser, rotaxis2m, PDBIO
@@ -20,9 +22,9 @@ from scipy.special import softmax as scipy_softmax
 from sklearn.decomposition import PCA
 import logging
 
-from src.model.model import Model, clean_tensor, Mol,DNEG, DPOS, OUTDIR
+from src.model.model import Model, clean_tensor, Mol, DNEG, DPOS, OUTDIR
 from src.util.mol import Mol_with_epitopes, Mol_slim
-from src.model.aligner import Aligner1,get_r 
+from src.model.aligner import Aligner1, get_r
 
 
 # Globals
@@ -41,23 +43,23 @@ logger = logging.getLogger("🧪 SurfaceID")
 
 def gen_descriptors_contact(p1s, p2s, model, device, rho_max, outdir, fname):
     """Obtain Surface ID descriptors for the surface patches at the contact reagions
-        as defined in the "{p1}_contacts.{p2}.npy". Otherwise it uses entire protein Surface 
+        as defined in the "{p1}_contacts.{p2}.npy". Otherwise it uses entire protein Surface
 
     :param p1s: ID for protein 1: Format: PDBID_chain
     :type p1s: str
     :param p2s: ID for protein 2: Format: PDBID_chain
     :type p2s: str
-    :param model:  model class used to obtain descriptors for a given protein   
+    :param model:  model class used to obtain descriptors for a given protein
     :type model: Model
     :param device: CPU or GPU
     :type device: Torch.device
-    :param rho_max: max value for the radial distance from the patch center 
+    :param rho_max: max value for the radial distance from the patch center
     :type rho_max: float
-    :param outdir: directory where Surface ID descriptors are saved 
+    :param outdir: directory where Surface ID descriptors are saved
     :type outdir: str
     :param fname: npz file containing descriptors for all proteins
     :type fname: str
-    :return: pdb,Surface ID descriptors, and patch/vertex indices  
+    :return: pdb,Surface ID descriptors, and patch/vertex indices
     """
     outs = []
     idxs = []
@@ -66,28 +68,33 @@ def gen_descriptors_contact(p1s, p2s, model, device, rho_max, outdir, fname):
     with torch.set_grad_enabled(False):
         for i, (p1, p2) in enumerate(zip(p1s, p2s)):
             # p1 -> p2
-            #print(i, p1, p2)
+            # print(i, p1, p2)
             x_, rho_, theta_, mask_, idxs0_, pdbs_ = get_batch(
-                device, [(p1, p2)], rho_max, contacts=True, outdir=outdir)
+                device, [(p1, p2)], rho_max, contacts=True, outdir=outdir
+            )
             for i1 in range(0, len(x_), bs):
                 i2 = min(i1 + bs, len(x_))
-                o, _, _, _ = model(x_[i1:i2],
-                                   rho_[i1:i2],
-                                   theta_[i1:i2],
-                                   mask_[i1:i2],
-                                   calc_loss=False)
+                o, _, _, _ = model(
+                    x_[i1:i2], rho_[i1:i2], theta_[i1:i2], mask_[i1:i2], calc_loss=False
+                )
                 outs.append(o.detach().cpu().numpy())
             idxs.append(idxs0_)
             pdbss.append(pdbs_)
             if p1 != p2:
                 # p2 -> p1
-                #print(i, p2, p1)
+                # print(i, p2, p1)
                 x_, rho_, theta_, mask_, idxs0_, pdbs_ = get_batch(
-                    device, [(p2, p1)], rho_max, contacts=True, outdir=outdir)
+                    device, [(p2, p1)], rho_max, contacts=True, outdir=outdir
+                )
                 for i1 in range(0, len(x_), bs):
                     i2 = min(i1 + bs, len(x_))
-                    o, _, _, _ = model(x_[i1:i2], rho_[i1:i2], theta_[
-                                       i1:i2], mask_[i1:i2], calc_loss=False)
+                    o, _, _, _ = model(
+                        x_[i1:i2],
+                        rho_[i1:i2],
+                        theta_[i1:i2],
+                        mask_[i1:i2],
+                        calc_loss=False,
+                    )
                     outs.append(o.detach().cpu().numpy())
                 idxs.append(idxs0_)
                 pdbss.append(pdbs_)
@@ -100,7 +107,7 @@ def gen_descriptors_contact(p1s, p2s, model, device, rho_max, outdir, fname):
 
 
 def transform_library(x, y, z, xyz0_mean, xyz_mean, align_model, idx, n=None):
-    """ helper function for patch alignment where the hit patch aligned to the query patch using the align_model
+    """helper function for patch alignment where the hit patch aligned to the query patch using the align_model
 
     :param x: X coordinates for the vertex points on the patch
     :type x: np.array
@@ -120,8 +127,11 @@ def transform_library(x, y, z, xyz0_mean, xyz_mean, align_model, idx, n=None):
     :type n: np.array, optional
     :return: aligned patch and its normal
     """
-    a, b, g = align_model.alphas[idx].item(
-    ), align_model.betas[idx].item(), align_model.gammas[idx].item()
+    a, b, g = (
+        align_model.alphas[idx].item(),
+        align_model.betas[idx].item(),
+        align_model.gammas[idx].item(),
+    )
     Tx = align_model.Tx[idx].item()
     Ty = align_model.Ty[idx].item()
     Tz = align_model.Tz[idx].item()
@@ -135,34 +145,34 @@ def transform_library(x, y, z, xyz0_mean, xyz_mean, align_model, idx, n=None):
 
 def get_score2_helper(xyz0, fs_raw0, n0, xyz, fs_raw, n, sig, sig_normal=SIG_NORMAL):
     """helper function for computing the alignment score 2.
-this score uses the real space/raw features for the vertexes that are in contact 
-(RLIM=1.5\AA). It computes the feature distance for contact verteces and weighs
-it using the softmax of a Gaussian wieghed V-V distance. It also computers the 
-dot product of the normals for the contact vertices
+    this score uses the real space/raw features for the vertexes that are in contact
+    (RLIM=1.5\AA). It computes the feature distance for contact verteces and weighs
+    it using the softmax of a Gaussian wieghed V-V distance. It also computers the
+    dot product of the normals for the contact vertices
 
-    :param xyz0: coordinates of the query patch
-    :type xyz0: np.array
-    :param fs_raw0: raw features for the query from MaSIF preprocessing 
-    :type fs_raw0: np.array
-    :param n0: normal vectors for the query pacth
-    :type n0: np.array
-    :param xyz: coordinates of the candidate patch
-    :type xyz: np.array
-    :param fs_raw: raw features for the candidate from MaSIF preprocessing
-    :type fs_raw: np.array
-    :param n: normal vectors for the candidate pacth
-    :type n: np.array
-    :param sig: the spread for the Gaussian wieghts
-    :type sig: float
-    :param sig_normal: , defaults to SIG_NORMAL
-    :type sig_normal: float, optional
-    :return: alignment nontacts, score (feature), alignment score(normals)
+        :param xyz0: coordinates of the query patch
+        :type xyz0: np.array
+        :param fs_raw0: raw features for the query from MaSIF preprocessing
+        :type fs_raw0: np.array
+        :param n0: normal vectors for the query pacth
+        :type n0: np.array
+        :param xyz: coordinates of the candidate patch
+        :type xyz: np.array
+        :param fs_raw: raw features for the candidate from MaSIF preprocessing
+        :type fs_raw: np.array
+        :param n: normal vectors for the candidate pacth
+        :type n: np.array
+        :param sig: the spread for the Gaussian wieghts
+        :type sig: float
+        :param sig_normal: , defaults to SIG_NORMAL
+        :type sig_normal: float, optional
+        :return: alignment nontacts, score (feature), alignment score(normals)
     """
     r = get_r(xyz0, xyz)  # [N0, N]
     mask = (r < RLIM).astype(np.float32)
-    r = 100. * (1. - mask) + r * mask
+    r = 100.0 * (1.0 - mask) + r * mask
     nactive = np.sum(mask.sum(axis=0) > 0)
-    w = scipy_softmax(-r**2 / sig**2, axis=0)
+    w = scipy_softmax(-(r**2) / sig**2, axis=0)
     f_matrix = np.sum(np.square(fs_raw0[:, None, :] - fs_raw[None, :, :]), axis=-1)
     score = (w * mask * f_matrix).sum() / nactive
     n_matrix = np.sum(n0[:, None, :] * n[None, :, :], axis=-1)
@@ -171,7 +181,7 @@ dot product of the normals for the contact vertices
 
 
 def get_score2(xyz0, fs_raw0, n0, xyz, fs_raw, n, sig):
-    """ averages the alignment score2 permutating candidate and hit patches
+    """averages the alignment score2 permutating candidate and hit patches
 
     :param xyz0: coordinates of the query patch
     :type xyz0: np.array
@@ -190,16 +200,19 @@ def get_score2(xyz0, fs_raw0, n0, xyz, fs_raw, n, sig):
     :return: ncontacts, mean scores using features and normals
     """
     nactive1, score1, n0_score = get_score2_helper(
-        xyz0, fs_raw0, n0, xyz, fs_raw, n, sig)
+        xyz0, fs_raw0, n0, xyz, fs_raw, n, sig
+    )
     nactive2, score2, n_score = get_score2_helper(
-        xyz, fs_raw, n, xyz0, fs_raw0, n0, sig)
-    nactive = (nactive1 + nactive2) / 2.
-    n_score = (n_score + n0_score) / 2.
-    score = (score1 + score2) / 2.
+        xyz, fs_raw, n, xyz0, fs_raw0, n0, sig
+    )
+    nactive = (nactive1 + nactive2) / 2.0
+    n_score = (n_score + n0_score) / 2.0
+    score = (score1 + score2) / 2.0
     # # -- using planes
     # n_score = np.dot(n0_pca, n_pca)
 
     return nactive, n_score, score
+
 
 def get_score1(xyz0, xyz, mask, npairs):
     r = get_r(xyz0, xyz)
@@ -208,9 +221,8 @@ def get_score1(xyz0, xyz, mask, npairs):
     return loss
 
 
-
 def get_pca_normal(xyz):
-    """ computes PCA
+    """computes PCA
 
     :param xyz: xyz
     :type xyz: np.array
@@ -224,11 +236,11 @@ def get_pca_normal(xyz):
 
 def get_fs(query, pdbs_desc, x_desc, idxs_desc):
     """returns the SurfaceID descriptors
-    :param query: the protein id 
+    :param query: the protein id
     :type query: str
     :param pdbs_desc: protein ids
     :type pdbs_desc: np.array
-    :param x_desc: surface id descriptors 
+    :param x_desc: surface id descriptors
     :type x_desc: np.array
     :param idxs_desc: surface patch indices
     :type idxs_desc: np.array
@@ -240,8 +252,8 @@ def get_fs(query, pdbs_desc, x_desc, idxs_desc):
 
 
 def get_xyz_npz(fname, idxs=None):
-    """returns x coordinates of the 
-        vertex points on the protein surface 
+    """returns x coordinates of the
+        vertex points on the protein surface
 
     :param fname: npz file name
     :type fname: str
@@ -255,9 +267,9 @@ def get_xyz_npz(fname, idxs=None):
 
 
 def get_normal_npz(fname, idxs=None):
-    """ normal vectors on protein surface
+    """normal vectors on protein surface
 
-    :param fname: npz file name 
+    :param fname: npz file name
     :type fname: str
     :param idxs: vertex id, defaults to None
     :type idxs: int , optional
@@ -269,11 +281,11 @@ def get_normal_npz(fname, idxs=None):
 
 
 def get_xyz(plydata, idxs=None):
-    """ returns the xyz coordinates 
+    """returns the xyz coordinates
         on portein surface
 
     :param plydata: plydata object
-    :type plydata: plydata 
+    :type plydata: plydata
     :param idxs: vertex id , defaults to None
     :type idxs: int, optional
     :return: xyz coordinates
@@ -288,7 +300,7 @@ def get_xyz(plydata, idxs=None):
 
 
 def get_fs_npz(fname, idxs):
-    """ returns surface features on 
+    """returns surface features on
         protein surface
 
     :param fname: npz file name
@@ -309,7 +321,7 @@ def get_centroid(xyz):
 
 
 def transform(x, y, z, a, b, g, Tx, Ty, Tz, xyz0_mean, xyz_mean):
-    """ apply 3D rotation/translation 
+    """apply 3D rotation/translation
     :param x: X coordinates
     : type x: np.array
     :param y: Y coordinates
@@ -339,11 +351,9 @@ def transform(x, y, z, a, b, g, Tx, Ty, Tz, xyz0_mean, xyz_mean):
     x -= xyz_mean[0]
     y -= xyz_mean[1]
     z -= xyz_mean[2]
-    x1 = ca * cb * x + (ca * sb * sg - sa * cg) * y + \
-        (ca * sb * cg + sa * sg) * z + Tx
-    y1 = sa * cb * x + (sa * sb * sg + ca * cg) * y + \
-        (sa * sb * cg - ca * sg) * z + Ty
-    z1 = - sb * x + cb * sg * y + cb * cg * z + Tz
+    x1 = ca * cb * x + (ca * sb * sg - sa * cg) * y + (ca * sb * cg + sa * sg) * z + Tx
+    y1 = sa * cb * x + (sa * sb * sg + ca * cg) * y + (sa * sb * cg - ca * sg) * z + Ty
+    z1 = -sb * x + cb * sg * y + cb * cg * z + Tz
     xyz = np.stack([x1, y1, z1]).T
     xyz += xyz0_mean
 
@@ -351,7 +361,7 @@ def transform(x, y, z, a, b, g, Tx, Ty, Tz, xyz0_mean, xyz_mean):
 
 
 def inverse_rotation(x, y, z, a, b, g):
-    """ rotates the coordinates back
+    """rotates the coordinates back
 
     :param x: X coordinates
     :type x: np.array
@@ -370,17 +380,15 @@ def inverse_rotation(x, y, z, a, b, g):
     ca, cb, cg = np.cos(a), np.cos(b), np.cos(g)
     sa, sb, sg = np.sin(a), np.sin(b), np.sin(g)
     x1 = ca * cb * x + sa * cb * y - sb * z
-    y1 = (ca * sb * sg - sa * cg) * x + \
-        (sa * sb * sg + ca * cg) * y + cb * sg * z
-    z1 = (ca * sb * cg + sa * sg) * x + \
-        (sa * sb * cg - ca * sg) * y + cb * cg * z
+    y1 = (ca * sb * sg - sa * cg) * x + (sa * sb * sg + ca * cg) * y + cb * sg * z
+    z1 = (ca * sb * cg + sa * sg) * x + (sa * sb * cg - ca * sg) * y + cb * cg * z
     xyz = np.stack([x1, y1, z1]).T
 
     return xyz
 
 
 def mean_normal(n):
-    """ averages over the 
+    """averages over the
         patch normal vectors
 
     :param n: patch normal vectors
@@ -392,13 +400,13 @@ def mean_normal(n):
 
 
 def get_desc_aux(pdbs):
-    """ returns the indices where a 
-given protein id starts and ends
-in Surface ID descriptor file 
+    """returns the indices where a
+    given protein id starts and ends
+    in Surface ID descriptor file
 
-:param pdbs: pdb field in the descriptor file
-:type pdbs: np.array
-:return: number of patches corresponding to each  protein in the area of interest, unique protein ids, and the start-end indices for each protein in the descriptor file
+    :param pdbs: pdb field in the descriptor file
+    :type pdbs: np.array
+    :return: number of patches corresponding to each  protein in the area of interest, unique protein ids, and the start-end indices for each protein in the descriptor file
     """
     n = len(np.unique(pdbs))
     starts = np.zeros(n, dtype=np.int32)
@@ -407,7 +415,7 @@ in Surface ID descriptor file
     pdb_pivot = pdbs[0]
     pdbs_unique = []
     i = 0
-    while i < (len(pdbs)-1):
+    while i < (len(pdbs) - 1):
         i += 1
         if pdb_pivot != pdbs[i]:
             pdbs_unique.append(pdb_pivot)
@@ -415,36 +423,38 @@ in Surface ID descriptor file
             ends[idx] = i
             idx += 1
             starts[idx] = i
-    ends[-1] = i+1
+    ends[-1] = i + 1
     pdbs_unique.append(pdb_pivot)
     pdbs_unique = np.asarray(pdbs_unique)
-    patch_sizes = ends-starts
+    patch_sizes = ends - starts
 
     return patch_sizes, pdbs_unique, starts, ends
 
 
-def search(o1, 
-           rho, 
-           list_indices, 
-           within, 
-           library,
-           library_within, 
-           pdbs_unique, 
-           patch_sizes,
-           pdbs, 
-           x_desc, 
-           idxs_desc, 
-           mini_bs, 
-           device, 
-           nmin_pts, 
-           expand_radius, 
-           nmin_pts_library,
-           thres, 
-           target, 
-           idxs_contact):
-    """ performs the search for all pairs between the query and candidate
+def search(
+    o1,
+    rho,
+    list_indices,
+    within,
+    library,
+    library_within,
+    pdbs_unique,
+    patch_sizes,
+    pdbs,
+    x_desc,
+    idxs_desc,
+    mini_bs,
+    device,
+    nmin_pts,
+    expand_radius,
+    nmin_pts_library,
+    thres,
+    target,
+    idxs_contact,
+):
+    """performs the search for all pairs between the query and candidate
         first, it computes the descriptor distance between all pair of verticies
-        between  query and candidate. it selects pairs within the descriptor 
+        between  query and candidate. it selects pairs within the descriptor
         distance thresheold. if number of hits between query and candidate exceeds
         the threshold arameter, hit grouping is performed to unify vertex hits with
         their nearest neighbors and form a hit area on each protein surface.
@@ -476,7 +486,7 @@ def search(o1,
     :type mini_bs: torch.tensor
     :param device: CPU or GPU
     :type device: str
-    :param nmin_pts: minimum number of hit patches on query for identifying it as a hit  
+    :param nmin_pts: minimum number of hit patches on query for identifying it as a hit
     :type nmin_pts: int
     :param expand_radius: the expansion radius around the hit vertices to define the hit area following the clustering step
     :type expand_radius: float
@@ -484,11 +494,11 @@ def search(o1,
     :type nmin_pts_library: int
     :param thres: threshld used for descriptor distance to identify two patches as similar
     :type thres: float
-    :param target: protein id for the query 
+    :param target: protein id for the query
     :type target: str
-    :param idxs_contact: patch indices for located at the area of contact 
+    :param idxs_contact: patch indices for located at the area of contact
     :type idxs_contact: np.array
-    :return: 
+    :return:
     """
     summary = []
     with torch.set_grad_enabled(False):
@@ -505,9 +515,8 @@ def search(o1,
             n2 = len(o2)
             ds = []
             for i1 in range(0, n2, mini_bs):
-                i2 = min(i1+mini_bs, n2)
-                o2_ = torch.tensor(o2[i1:i2]).to(
-                    device).view(1, i2-i1, o2.shape[-1])
+                i2 = min(i1 + mini_bs, n2)
+                o2_ = torch.tensor(o2[i1:i2]).to(device).view(1, i2 - i1, o2.shape[-1])
                 d = torch.norm(o1 - o2_, dim=2)
                 ds.append(d)
             d = torch.cat(ds, dim=1)
@@ -515,14 +524,15 @@ def search(o1,
             if idxs_contact is not None:
                 # mask out non-contact points
                 iselect = ~np.in1d(np.arange(len(mask)), idxs_contact)
-                mask[iselect] = 0.
+                mask[iselect] = 0.0
             hits = np.sum(mask, axis=1) > 0
             hits = np.where(hits)[0]
             nhits = len(hits)
             # get lb connectivity / hits
             if nhits >= nmin_pts:
                 groups = find_clusters(
-                    hits, within, rho, list_indices, nmin_pts, expand_radius)
+                    hits, within, rho, list_indices, nmin_pts, expand_radius
+                )
                 if groups:
                     d = d.cpu().numpy()
                     for target_nhits, target_nexpanded, idxs in groups:
@@ -531,26 +541,47 @@ def search(o1,
                         hits_lb = np.where(hits_lb)[0]
                         # No expanding library epitope
                         idxs_lb = find_clusters(
-                            hits_lb, within_lb, None, None, nmin_pts=nmin_pts_library, expand_radius=0.0)
+                            hits_lb,
+                            within_lb,
+                            None,
+                            None,
+                            nmin_pts=nmin_pts_library,
+                            expand_radius=0.0,
+                        )
                         if len(idxs_lb) == 0:
                             continue
                         else:
                             lb_nhits, lb_nexpanded, idxs_lb = idxs_lb[0]
                         mean_desc_dist = np.mean(d[idxs[:, None], idxs_lb])
                         frac_lb_hits = lb_nhits / lb_nexpanded
-                        summary.append((target, lb, target_nhits, target_nexpanded,
-                                       mean_desc_dist, lb_nhits, lb_nexpanded, frac_lb_hits, idxs, idxs_lb))
-                    logger.info(f" # of Hit identified  {j} {lb} :  dt = {time() - st:.3f}")
+                        summary.append(
+                            (
+                                target,
+                                lb,
+                                target_nhits,
+                                target_nexpanded,
+                                mean_desc_dist,
+                                lb_nhits,
+                                lb_nexpanded,
+                                frac_lb_hits,
+                                idxs,
+                                idxs_lb,
+                            )
+                        )
+                    logger.info(
+                        f" # of Hit identified  {j} {lb} :  dt = {time() - st:.3f}"
+                    )
 
     return summary
 
+
 def find_clusters(hits, within, rho, list_indices, nmin_pts=200, expand_radius=3.0):
-    """ unites the hit verteces using nearest neighbors within the expansion radius.
+    """unites the hit verteces using nearest neighbors within the expansion radius.
         the clusters that satisfy the cluster size threshold are returned as hit area.
 
-    :param hits: hit vertex points/patches that satisfy the descriptor distance cutoff 
+    :param hits: hit vertex points/patches that satisfy the descriptor distance cutoff
     :type hits: np.array
-    :param within: 
+    :param within:
     :type within: np.array
     :param rho: radial distances of vertecies wrt patch center
     :type rho: np.array
@@ -581,10 +612,10 @@ def find_clusters(hits, within, rho, list_indices, nmin_pts=200, expand_radius=3
     ngroups = len(groups)
     for _ in range(20):
         i = 0
-        while i < (len(groups)-1):
+        while i < (len(groups) - 1):
             group1 = groups[i]
             tmp = [group1]
-            for j in range(len(groups)-1, i, -1):
+            for j in range(len(groups) - 1, i, -1):
                 # print(i, j)
                 group2 = groups[j]
                 # Any hits?
@@ -610,17 +641,18 @@ def find_clusters(hits, within, rho, list_indices, nmin_pts=200, expand_radius=3
             group = np.where(within[group].sum(0) > 0)[0]
         else:
             rho_ = rho[group]
-            group = np.unique(list_indices[group][(
-                rho_ > 0) & (rho_ < expand_radius)])
+            group = np.unique(list_indices[group][(rho_ > 0) & (rho_ < expand_radius)])
         groups_expanded.append((nhits, len(group), group))
 
     return groups_expanded
 
+
 def get_batch(device, ps, rho_max, contacts=True, outdir=None):
     xs = [Mol_with_epitopes(p, contacts, outdir) for p in ps]
     xs = [x for x in xs if x.status == "good"]
-    patches = [(x.x, x.rho, x.theta, x.mask, x.idxs0,
-                np.full(len(x.idxs0), x.p)) for x in xs]
+    patches = [
+        (x.x, x.rho, x.theta, x.mask, x.idxs0, np.full(len(x.idxs0), x.p)) for x in xs
+    ]
     x, rho, theta, mask, idxs0, pdbs = zip(*patches)
     x_ = np.concatenate(x)
     rho_ = np.concatenate(rho)
@@ -630,7 +662,7 @@ def get_batch(device, ps, rho_max, contacts=True, outdir=None):
     pdbs = np.concatenate(pdbs)
 
     # reduce data
-    mask_[rho_ > rho_max] = 0.
+    mask_[rho_ > rho_max] = 0.0
     m = mask_.sum(axis=0)
     npoints = 0
     while m[npoints] > 0:
@@ -649,12 +681,12 @@ def get_batch(device, ps, rho_max, contacts=True, outdir=None):
 
 
 def get_whole_molecule_desc(target, model, rho_max, bs=256, device="cpu", outdir=None):
-    """ returns the Surface ID descriptors for the whole entire protein
+    """returns the Surface ID descriptors for the whole entire protein
     :param target: protein name
     :type target: str
-    :param model: Surface ID model 
+    :param model: Surface ID model
     :type model: Model
-    :param rho_max: max radial cutoff for patch vertices  
+    :param rho_max: max radial cutoff for patch vertices
     :type rho_max: float
     :param bs:batch size, defaults to 256
     :type bs: int, optional
@@ -666,12 +698,14 @@ def get_whole_molecule_desc(target, model, rho_max, bs=256, device="cpu", outdir
     :rtype: _type_
     """
     x_, rho_, theta_, mask_, idxs0_, pdbs_ = get_batch(
-        device, [(target, "none")], rho_max, contacts=False, outdir=outdir)
+        device, [(target, "none")], rho_max, contacts=False, outdir=outdir
+    )
     outs = []
     for i1 in range(0, len(x_), bs):
         i2 = min(i1 + bs, len(x_))
-        o, _, _, _ = model(x_[i1:i2], rho_[i1:i2], theta_[
-                           i1:i2], mask_[i1:i2], calc_loss=False)
+        o, _, _, _ = model(
+            x_[i1:i2], rho_[i1:i2], theta_[i1:i2], mask_[i1:i2], calc_loss=False
+        )
         outs.append(o.detach().cpu().numpy())
     o = np.concatenate(outs)
     p = Mol_slim(device, f"{target}.none", contacts=False, outdir=outdir)
@@ -679,10 +713,8 @@ def get_whole_molecule_desc(target, model, rho_max, bs=256, device="cpu", outdir
     return o, p
 
 
-
-
 def get_within(rho, list_indices, neighbor_dist):
-    """ returns the vertex points within neighbor_dist or patch center
+    """returns the vertex points within neighbor_dist or patch center
 
     :param rho: radial distances of vertex points wrt patch center
     :type rho: np.array
@@ -706,7 +738,7 @@ def get_within(rho, list_indices, neighbor_dist):
 
 
 def get_reordered_subset(idxs, rho, list_indices):
-    """ returns re-ordered subset of points 
+    """returns re-ordered subset of points
 
     :param idxs:  subset vertices
     :type idxs: np.array
@@ -718,7 +750,7 @@ def get_reordered_subset(idxs, rho, list_indices):
     :rtype: _type_
     """
     idxs_new = np.arange(len(idxs), dtype=np.int32)
-    reorder_map = np.full(np.max(list_indices)+1, -1, dtype=np.int32)
+    reorder_map = np.full(np.max(list_indices) + 1, -1, dtype=np.int32)
     reorder_map[idxs] = idxs_new
     rho_subset, list_indices_subset = rho[idxs], reorder_map[list_indices[idxs]]
 
@@ -726,8 +758,8 @@ def get_reordered_subset(idxs, rho, list_indices):
 
 
 def smooth_normals(n, rho, list_indices, sig_normal=SIG_NORMAL):
-    """ returns the mean of normal vetors for each patch using the 
-        vertex points within a cutoff distance of 3*SIG_NORMA. 
+    """returns the mean of normal vetors for each patch using the
+        vertex points within a cutoff distance of 3*SIG_NORMA.
 
     :param n: normal vectors for each vertex point
     :type n: np.array
@@ -744,21 +776,30 @@ def smooth_normals(n, rho, list_indices, sig_normal=SIG_NORMAL):
     rlim = SIG_NORMAL * 3
     for i, (li, r) in enumerate(zip(list_indices, rho)):
         iselect = r < rlim
-        w = np.exp(-r[iselect]**2 / sig_normal**2)
-        n_smoothed[i] = np.sum(
-            n[li[iselect]] * w.reshape(iselect.sum(), 1), axis=0) / w.sum()
-    n_smoothed = n_smoothed / \
-        np.sqrt(np.sum(np.square(n_smoothed), axis=1).reshape(len(n), 1))
+        w = np.exp(-r[iselect] ** 2 / sig_normal**2)
+        n_smoothed[i] = (
+            np.sum(n[li[iselect]] * w.reshape(iselect.sum(), 1), axis=0) / w.sum()
+        )
+    n_smoothed = n_smoothed / np.sqrt(
+        np.sum(np.square(n_smoothed), axis=1).reshape(len(n), 1)
+    )
 
     return n_smoothed
 
 
-def compute_aux_contact(p1, p2, OUTDIR, expand_radius, neighbor_dist, mode,
-                     contact_thres1, contact_thres2, device, smooth=True):
-    """ p1, p2 are binding partners. Compute smoothed normals, contact region indices, and a matrix that tells which points are connected
-
-    
-    """
+def compute_aux_contact(
+    p1,
+    p2,
+    OUTDIR,
+    expand_radius,
+    neighbor_dist,
+    mode,
+    contact_thres1,
+    contact_thres2,
+    device,
+    smooth=True,
+):
+    """p1, p2 are binding partners. Compute smoothed normals, contact region indices, and a matrix that tells which points are connected"""
     data1 = np.load(os.path.join(OUTDIR, f"{p1}_surface.npz"))
     x1 = data1["pos"]
     li1 = data1["list_indices"]
@@ -782,7 +823,7 @@ def compute_aux_contact(p1, p2, OUTDIR, expand_radius, neighbor_dist, mode,
     # ---- calc dist
     x1 = torch.tensor(x1.reshape(len(x1), 1, 3)).to(device)
     x2 = torch.tensor(x2.reshape(1, len(x2), 3)).to(device)
-    d = torch.norm(x1-x2, dim=2).cpu().numpy()
+    d = torch.norm(x1 - x2, dim=2).cpu().numpy()
     if mode == "iface":
         # ---- based on iface
         ii1, ii2 = np.where(d < contact_thres1)
@@ -823,7 +864,7 @@ def compute_aux_contact(p1, p2, OUTDIR, expand_radius, neighbor_dist, mode,
 
 # ----- OX40 specific funs
 def get_cdr_residues(x, OUTDIR):
-    """extract the coordinates of CDR residues from the x DataFrame 
+    """extract the coordinates of CDR residues from the x DataFrame
 
     :param x: pd.DataFrame containing the CDRs
     :type x: pd.DataFrame
@@ -833,7 +874,9 @@ def get_cdr_residues(x, OUTDIR):
     :rtype: _type_
     """
     cdr_residues = {}
-    for chain, cdrs in zip(["L", "H"], [('CDRL1', 'CDRL2', 'CDRL3'), ('CDRH1', 'CDRH2', 'CDRH3')]):
+    for chain, cdrs in zip(
+        ["L", "H"], [("CDRL1", "CDRL2", "CDRL3"), ("CDRH1", "CDRH2", "CDRH3")]
+    ):
         tmp = []
         for cdr in cdrs:
             st, e = x[cdr].split("-")
@@ -870,16 +913,18 @@ def get_cdr_residues(x, OUTDIR):
     return xs
 
 
-def compute_aux_coors(p1, 
-                         OUTDIR, 
-                         expand_radius, 
-                         neighbor_dist,
-                         contact_thres1, 
-                         contact_thres2, 
-                         device, 
-                         x2, 
-                         smooth=True):
-    """ identifies and writes the surface patches at the interface, the mean normal vectors,
+def compute_aux_coors(
+    p1,
+    OUTDIR,
+    expand_radius,
+    neighbor_dist,
+    contact_thres1,
+    contact_thres2,
+    device,
+    x2,
+    smooth=True,
+):
+    """identifies and writes the surface patches at the interface, the mean normal vectors,
         and vertex points that are within a utoff distance from each patch at the interface
 
     :paramp1: protein name
@@ -890,13 +935,13 @@ def compute_aux_coors(p1,
     :type expand_radius: float
     :param neighbor_dist: list of vertex points within a patch
     :type neighbor_dist: list
-    :param contact_thres1: cutoff distance for protein 1 to identify the patches at the area of interest 
+    :param contact_thres1: cutoff distance for protein 1 to identify the patches at the area of interest
     :type contact_thres1: float
     :param contact_thres2: cutoff distance for protein 2 to identify the patches at the area of interest
     :type contact_thres2: float
     :param x2: coordinates of verecies for protein 2
     :type x2: np.array
-    :return: 
+    :return:
     :rtype: _type_
     """
     data1 = np.load(os.path.join(OUTDIR, f"{p1}_surface.npz"))
@@ -914,7 +959,7 @@ def compute_aux_coors(p1,
     # ---- calc dist
     x1 = torch.tensor(x1.reshape(len(x1), 1, 3)).to(device)
     x2 = torch.tensor(x2.reshape(1, len(x2), 3)).to(device)
-    d = torch.norm(x1-x2, dim=2).cpu().numpy()
+    d = torch.norm(x1 - x2, dim=2).cpu().numpy()
     ii1, ii2 = np.where(d < contact_thres1)
 
     # ---- expand
@@ -930,14 +975,12 @@ def compute_aux_coors(p1,
     return None
 
 
-
-
-def compute_aux_whole(p1, 
-                           OUTDIR,
-                           neighbor_dist,
-                         ):
-    """ extracts the idxs for entire protein surface  
-    """
+def compute_aux_whole(
+    p1,
+    OUTDIR,
+    neighbor_dist,
+):
+    """extracts the idxs for entire protein surface"""
 
     data1 = np.load(os.path.join(OUTDIR, f"{p1}_surface.npz"))
 
@@ -949,8 +992,8 @@ def compute_aux_whole(p1,
     ii1 = np.arange(len(x1))
     # ---- expand
     rho1_ = rho1[ii1]
-    #ii1 = np.unique(li1[ii1][(rho1_ > 0) & (rho1_ < expand_radius)])
-    ii1 = np.unique(li1[ii1][(rho1_ > 0) ])
+    # ii1 = np.unique(li1[ii1][(rho1_ > 0) & (rho1_ < expand_radius)])
+    ii1 = np.unique(li1[ii1][(rho1_ > 0)])
     np.save(os.path.join(OUTDIR, f"{p1}_contacts.{p1}.npy"), ii1)
     # ---- Compute connectivity matrix
     # assert False
@@ -959,5 +1002,3 @@ def compute_aux_whole(p1,
     np.save(os.path.join(OUTDIR, f"{p1}_within.{p1}.npy"), within1)
 
     return None
-
-
